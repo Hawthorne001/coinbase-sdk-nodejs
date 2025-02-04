@@ -1,19 +1,19 @@
-import { Coinbase } from "@coinbase/coinbase-sdk";
+import { Coinbase, Wallet } from "@coinbase/coinbase-sdk";
 import { createArrayCsvWriter } from "csv-writer";
 import os from "os";
 import fs from "fs";
 import { parse } from "csv-parse";
 
 // Create receiving Wallets.
-async function createReceivingWallets(user) {
+async function createReceivingWallets() {
   // Create 5 receiving Wallets and only store Wallet Addresses.
   const addresses = [];
 
   for (let i = 1; i <= 5; i++) {
-    let receivingWallet = await user.createWallet();
+    let receivingWallet = await Wallet.create();
     console.log(`Receiving Wallet${i} successfully created: `, receivingWallet.toString());
 
-    let receivingAddress = receivingWallet.getDefaultAddress();
+    let receivingAddress = await receivingWallet.getDefaultAddress();
     console.log(`Default address for Wallet${i}: `, receivingAddress.getId());
     addresses.push([receivingAddress.getId()]); // Storing Address as an array.
   }
@@ -35,17 +35,20 @@ async function writeReceivingAddressesToCsv(addresses) {
 }
 
 // Create and fund a sending Wallet.
-async function createAndFundSendingWallet(user) {
+async function createAndFundSendingWallet() {
   // Create sending Wallet.
-  let sendingWallet = await user.createWallet();
+  let sendingWallet = await Wallet.create();
   console.log(`sendingWallet successfully created: `, sendingWallet.toString());
 
   // Get sending Wallet Address.
-  let sendingAddress = sendingWallet.getDefaultAddress();
+  let sendingAddress = await sendingWallet.getDefaultAddress();
   console.log(`Default address for sendingWallet: `, sendingAddress.toString());
 
   // Fund sending Wallet.
   const faucetTransaction = await sendingWallet.faucet();
+
+  // Wait for the faucet transaction to complete or fail on-chain.
+  await faucetTransaction.wait();
   console.log(`Faucet transaction successfully completed: `, faucetTransaction.toString());
 
   return sendingWallet;
@@ -66,12 +69,15 @@ async function sendMassPayout(sendingWallet) {
       const address = row[0];
       if (address) {
         try {
-          await sendingWallet.createTransfer({
+          const transfer = await sendingWallet.createTransfer({
             // Send payment to each Address in CSV.
             amount: transferAmount,
             assetId: assetId,
             destination: address,
           });
+
+          await transfer.wait();
+
           console.log(`Transfer to ${address} successful`);
         } catch (error) {
           console.error(`Error transferring to ${address}: `, error);
@@ -89,14 +95,13 @@ async function sendMassPayout(sendingWallet) {
   try {
     // Manage CDP Api Key for Coinbase SDK.
     // Configure location to CDP API Key.
-    let coinbase = Coinbase.configureFromJson({
+    Coinbase.configureFromJson({
       filePath: `${os.homedir()}/Downloads/cdp_api_key.json`,
     });
 
-    const user = await coinbase.getDefaultUser();
-    const addresses = await createReceivingWallets(user);
+    const addresses = await createReceivingWallets();
     await writeReceivingAddressesToCsv(addresses);
-    const sendingWallet = await createAndFundSendingWallet(user);
+    const sendingWallet = await createAndFundSendingWallet();
     await sendMassPayout(sendingWallet);
   } catch (error) {
     console.error(`Error in sending mass payout: `, error);

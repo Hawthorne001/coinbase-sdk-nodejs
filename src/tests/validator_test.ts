@@ -1,77 +1,95 @@
 import { Validator } from "../coinbase/validator";
+import { ValidatorStatus } from "../coinbase/types";
+import { Validator as ValidatorModel } from "../client";
 import { Coinbase } from "../coinbase/coinbase";
-import {
-  mockEthereumValidator,
-  mockReturnValue,
-  VALID_ACTIVE_VALIDATOR_LIST,
-  validatorApiMock,
-} from "./utils";
+import { ValidatorStatus as APIValidatorStatus } from "../client/api";
 
 describe("Validator", () => {
-  beforeAll(() => {
-    // Mock the validator functions.
-    Coinbase.apiClients.validator = validatorApiMock;
-  });
+  let validator: Validator;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    const mockModel: ValidatorModel = {
+      validator_id: "123",
+      status: APIValidatorStatus.Active,
+      network_id: Coinbase.networks.EthereumHolesky,
+      asset_id: Coinbase.assets.Eth,
+      details: {
+        effective_balance: {
+          amount: "100",
+          asset: { network_id: Coinbase.networks.EthereumHolesky, asset_id: Coinbase.assets.Eth },
+        },
+        balance: {
+          amount: "200",
+          asset: { network_id: Coinbase.networks.EthereumHolesky, asset_id: Coinbase.assets.Eth },
+        },
+        exitEpoch: "epoch-1",
+        activationEpoch: "epoch-0",
+        index: "0",
+        public_key: "public-key-123",
+        slashed: false,
+        withdrawableEpoch: "epoch-2",
+        withdrawal_address: "withdrawal-address-123",
+      },
+    };
+
+    validator = new Validator(mockModel);
   });
 
-  describe("constructor", () => {
-    const validatorModel = mockEthereumValidator("100", "active_ongoing", "0xpublic_key_1");
-    const validator = new Validator(validatorModel);
-    it("initializes a new Validator", () => {
-      expect(validator).toBeInstanceOf(Validator);
+  test("getValidatorId should return the correct validator ID", () => {
+    expect(validator.getValidatorId()).toBe("123");
+  });
+
+  test("getStatus should return the correct status", () => {
+    expect(validator.getStatus()).toBe(ValidatorStatus.ACTIVE);
+  });
+
+  test("getNetworkId should return the correct network ID", () => {
+    expect(validator.getNetworkId()).toBe(Coinbase.networks.EthereumHolesky);
+  });
+
+  test("getAssetId should return the correct asset ID", () => {
+    expect(validator.getAssetId()).toBe(Coinbase.assets.Eth);
+  });
+
+  test("getActivationEpoch should return the correct activation epoch", () => {
+    expect(validator.getActivationEpoch()).toBe("epoch-0");
+  });
+
+  test("getExitEpoch should return the correct exit epoch", () => {
+    expect(validator.getExitEpoch()).toBe("epoch-1");
+  });
+
+  test("getIndex should return the correct index", () => {
+    expect(validator.getIndex()).toBe("0");
+  });
+
+  test("getPublicKey should return the correct public key", () => {
+    expect(validator.getPublicKey()).toBe("public-key-123");
+  });
+
+  test("isSlashed should return the correct slashed status", () => {
+    expect(validator.isSlashed()).toBe(false);
+  });
+
+  test("getWithdrawableEpoch should return the correct withdrawable epoch", () => {
+    expect(validator.getWithdrawableEpoch()).toBe("epoch-2");
+  });
+
+  test("getWithdrawalAddress should return the correct withdrawal address", () => {
+    expect(validator.getWithdrawalAddress()).toBe("withdrawal-address-123");
+  });
+
+  test("getEffectiveBalance should return the correct effective balance", () => {
+    expect(validator.getEffectiveBalance()).toEqual({
+      amount: "100",
+      asset: { network_id: Coinbase.networks.EthereumHolesky, asset_id: Coinbase.assets.Eth },
     });
+  });
 
-    it("should raise an error when initialized with a model of a different type", () => {
-      expect(() => new Validator(null!)).toThrow("Invalid model type");
+  test("getBalance should return the correct balance", () => {
+    expect(validator.getBalance()).toEqual({
+      amount: "200",
+      asset: { network_id: Coinbase.networks.EthereumHolesky, asset_id: Coinbase.assets.Eth },
     });
-  });
-
-  it("should return a list of validators for ethereum holesky and eth asset", async () => {
-    Coinbase.apiClients.validator!.listValidators = mockReturnValue(VALID_ACTIVE_VALIDATOR_LIST);
-
-    const validators = await Validator.list(
-      Coinbase.networks.EthereumHolesky,
-      Coinbase.assets.Eth,
-      "active_ongoing",
-    );
-
-    expect(Coinbase.apiClients.validator!.listValidators).toHaveBeenCalledWith(
-      Coinbase.networks.EthereumHolesky,
-      Coinbase.assets.Eth,
-      "active_ongoing",
-    );
-
-    expect(validators.length).toEqual(3);
-    expect(validators[0].getValidatorId()).toEqual("0xpublic_key_1");
-    expect(validators[0].getStatus()).toEqual("active_ongoing");
-    expect(validators[1].getValidatorId()).toEqual("0xpublic_key_2");
-    expect(validators[1].getStatus()).toEqual("active_ongoing");
-    expect(validators[2].getValidatorId()).toEqual("0xpublic_key_3");
-    expect(validators[2].getStatus()).toEqual("active_ongoing");
-  });
-
-  it("should return a validator for ethereum holesky and eth asset", async () => {
-    Coinbase.apiClients.validator!.getValidator = mockReturnValue(
-      mockEthereumValidator("100", "active_exiting", "0x123"),
-    );
-
-    const validator = await Validator.fetch(
-      Coinbase.networks.EthereumHolesky,
-      Coinbase.assets.Eth,
-      "0x123",
-    );
-
-    expect(Coinbase.apiClients.validator!.getValidator).toHaveBeenCalledWith(
-      Coinbase.networks.EthereumHolesky,
-      Coinbase.assets.Eth,
-      "0x123",
-    );
-
-    expect(validator.getValidatorId()).toEqual("0x123");
-    expect(validator.getStatus()).toEqual("active_exiting");
-    expect(validator.toString()).toEqual("Id: 0x123, Status: active_exiting");
   });
 });

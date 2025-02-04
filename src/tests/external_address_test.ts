@@ -4,19 +4,22 @@ import {
   externalAddressApiMock,
   generateRandomHash,
   getAssetMock,
-  mockEthereumValidator,
   mockReturnValue,
   newAddressModel,
   stakeApiMock,
-  VALID_ACTIVE_VALIDATOR_LIST,
-  VALID_ADDRESS_MODEL,
   validatorApiMock,
+  VALID_FAUCET_TRANSACTION_MODEL,
 } from "./utils";
 import {
   AddressBalanceList,
   Balance,
+  FetchStakingRewards200Response,
+  FetchHistoricalStakingBalances200Response,
   StakingContext as StakingContextModel,
   StakingOperation as StakingOperationModel,
+  StakingRewardFormat,
+  StakingRewardStateEnum,
+  StakingOperationStatusEnum,
 } from "../client";
 import Decimal from "decimal.js";
 import { ExternalAddress } from "../coinbase/address/external_address";
@@ -24,6 +27,8 @@ import { StakeOptionsMode } from "../coinbase/types";
 import { StakingOperation } from "../coinbase/staking_operation";
 import { Asset } from "../coinbase/asset";
 import { randomUUID } from "crypto";
+import { StakingReward } from "../coinbase/staking_reward";
+import { StakingBalance } from "../coinbase/staking_balance";
 
 describe("ExternalAddress", () => {
   const newAddress = newAddressModel("", randomUUID(), Coinbase.networks.EthereumHolesky);
@@ -64,7 +69,7 @@ describe("ExternalAddress", () => {
     id: randomUUID(),
     network_id: Coinbase.networks.EthereumHolesky,
     address_id: "0x1234567890",
-    status: "pending",
+    status: StakingOperationStatusEnum.Initialized,
     transactions: [
       {
         from_address_id: address.getId(),
@@ -85,18 +90,110 @@ describe("ExternalAddress", () => {
       },
     ],
   };
+  const startTime = "2024-05-01T00:00:00Z";
+  const endTime = "2024-05-21T00:00:00Z";
+  const STAKING_REWARD_RESPONSE: FetchStakingRewards200Response = {
+    data: [
+      {
+        address_id: address.getId(),
+        date: "2024-05-01",
+        amount: "361",
+        state: StakingRewardStateEnum.Pending,
+        format: StakingRewardFormat.Usd,
+        usd_value: {
+          amount: "361",
+          conversion_price: "3000",
+          conversion_time: "2024-05-01T00:00:00Z",
+        },
+      },
+      {
+        address_id: address.getId(),
+        date: "2024-05-02",
+        amount: "203",
+        state: StakingRewardStateEnum.Pending,
+        format: StakingRewardFormat.Usd,
+        usd_value: {
+          amount: "203",
+          conversion_price: "3000",
+          conversion_time: "2024-05-02T00:00:00Z",
+        },
+      },
+      {
+        address_id: address.getId(),
+        date: "2024-05-03",
+        amount: "226",
+        state: StakingRewardStateEnum.Pending,
+        format: StakingRewardFormat.Usd,
+        usd_value: {
+          amount: "226",
+          conversion_price: "3000",
+          conversion_time: "2024-05-03T00:00:00Z",
+        },
+      },
+    ],
+    has_more: false,
+    next_page: "",
+  };
+
+  const HISTORICAL_STAKING_BALANCES_RESPONSE: FetchHistoricalStakingBalances200Response = {
+    data: [
+      {
+        address: address.getId(),
+        date: "2024-05-01",
+        bonded_stake: {
+          amount: "32",
+          asset: {
+            asset_id: Coinbase.assets.Eth,
+            network_id: address.getNetworkId(),
+            decimals: 18,
+          },
+        },
+        unbonded_balance: {
+          amount: "2",
+          asset: {
+            asset_id: Coinbase.assets.Eth,
+            network_id: address.getNetworkId(),
+            decimals: 18,
+          },
+        },
+        participant_type: "validator",
+      },
+      {
+        address: address.getId(),
+        date: "2024-05-02",
+        bonded_stake: {
+          amount: "33",
+          asset: {
+            asset_id: Coinbase.assets.Eth,
+            network_id: address.getNetworkId(),
+            decimals: 18,
+          },
+        },
+        unbonded_balance: {
+          amount: "3",
+          asset: {
+            asset_id: Coinbase.assets.Eth,
+            network_id: address.getNetworkId(),
+            decimals: 18,
+          },
+        },
+        participant_type: "validator",
+      },
+    ],
+    has_more: false,
+    next_page: "",
+  };
 
   beforeAll(() => {
     Coinbase.apiClients.stake = stakeApiMock;
     Coinbase.apiClients.asset = assetsApiMock;
-    Coinbase.apiClients.validator = validatorApiMock;
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe(".buildStakeOperation", () => {
+  describe("#buildStakeOperation", () => {
     it("should successfully build a stake operation", async () => {
       Coinbase.apiClients.stake!.getStakingContext = mockReturnValue(STAKING_CONTEXT_MODEL);
       Coinbase.apiClients.stake!.buildStakingOperation = mockReturnValue(STAKING_OPERATION_MODEL);
@@ -166,7 +263,7 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".buildUnstakeOperation", () => {
+  describe("#buildUnstakeOperation", () => {
     it("should successfully build a unstake operation", async () => {
       Coinbase.apiClients.stake!.getStakingContext = mockReturnValue(STAKING_CONTEXT_MODEL);
       Coinbase.apiClients.stake!.buildStakingOperation = mockReturnValue(STAKING_OPERATION_MODEL);
@@ -231,7 +328,7 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".buildClaimStakeOperation", () => {
+  describe("#buildClaimStakeOperation", () => {
     it("should successfully build a claim stake operation", async () => {
       Coinbase.apiClients.stake!.getStakingContext = mockReturnValue(STAKING_CONTEXT_MODEL);
       Coinbase.apiClients.stake!.buildStakingOperation = mockReturnValue(STAKING_OPERATION_MODEL);
@@ -306,7 +403,56 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".listBalances", () => {
+  describe("#stakingRewards", () => {
+    it("should return staking rewards successfully", async () => {
+      Coinbase.apiClients.stake!.fetchStakingRewards = mockReturnValue(STAKING_REWARD_RESPONSE);
+      Coinbase.apiClients.asset!.getAsset = getAssetMock();
+      const response = await address.stakingRewards(Coinbase.assets.Eth, startTime, endTime);
+
+      expect(response).toBeInstanceOf(Array<StakingReward>);
+      expect(response.length).toEqual(3);
+      expect(Coinbase.apiClients.stake!.fetchStakingRewards).toHaveBeenCalledWith(
+        {
+          network_id: address.getNetworkId(),
+          asset_id: Coinbase.assets.Eth,
+          address_ids: [address.getId()],
+          start_time: startTime,
+          end_time: endTime,
+          format: StakingRewardFormat.Usd,
+        },
+        100,
+        undefined,
+      );
+    });
+  });
+
+  describe("#historicalStakingBalances", () => {
+    it("should return staking balances successfully", async () => {
+      Coinbase.apiClients.stake!.fetchHistoricalStakingBalances = mockReturnValue(
+        HISTORICAL_STAKING_BALANCES_RESPONSE,
+      );
+      Coinbase.apiClients.asset!.getAsset = getAssetMock();
+      const response = await address.historicalStakingBalances(
+        Coinbase.assets.Eth,
+        startTime,
+        endTime,
+      );
+
+      expect(response).toBeInstanceOf(Array<StakingBalance>);
+      expect(response.length).toEqual(2);
+      expect(Coinbase.apiClients.stake!.fetchHistoricalStakingBalances).toHaveBeenCalledWith(
+        address.getNetworkId(),
+        Coinbase.assets.Eth,
+        address.getId(),
+        startTime,
+        endTime,
+        100,
+        undefined,
+      );
+    });
+  });
+
+  describe("#listBalances", () => {
     beforeEach(() => {
       const mockBalanceResponse: AddressBalanceList = {
         data: [
@@ -368,7 +514,7 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".getBalance", () => {
+  describe("#getBalance", () => {
     beforeEach(() => {
       const mockWalletBalance: Balance = {
         amount: "5000000000000000000",
@@ -436,16 +582,28 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".faucet", () => {
+  describe("#faucet", () => {
     beforeEach(() => {
-      Coinbase.apiClients.externalAddress!.requestExternalFaucetFunds = mockReturnValue({
-        transaction_hash: generateRandomHash(8),
-      });
+      Coinbase.apiClients.externalAddress!.requestExternalFaucetFunds = mockReturnValue(
+        VALID_FAUCET_TRANSACTION_MODEL,
+      );
     });
 
     it("should successfully request funds from the faucet", async () => {
-      const transaction = await address.faucet();
-      expect(transaction.getTransactionHash()).toEqual(expect.any(String));
+      const faucetTx = await address.faucet();
+
+      const { transaction_hash: txHash, transaction_link: txLink } =
+        VALID_FAUCET_TRANSACTION_MODEL.transaction;
+
+      expect(faucetTx.getTransactionHash()).toEqual(txHash);
+      expect(faucetTx.getTransactionLink()).toEqual(txLink);
+
+      expect(Coinbase.apiClients.externalAddress!.requestExternalFaucetFunds).toHaveBeenCalledWith(
+        address.getNetworkId(),
+        address.getId(),
+        undefined,
+        true, // Skip wait should be true.
+      );
     });
 
     it("should throw an error if the faucet request fails", async () => {
@@ -454,7 +612,7 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".stakeableBalance", () => {
+  describe("#stakeableBalance", () => {
     it("should return the stakeable balance successfully with default params", async () => {
       Coinbase.apiClients.stake!.getStakingContext = mockReturnValue(STAKING_CONTEXT_MODEL);
       const stakeableBalance = await address.stakeableBalance(Coinbase.assets.Eth);
@@ -488,7 +646,7 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".unstakeableBalance", () => {
+  describe("#unstakeableBalance", () => {
     it("should return the unstakeable balance successfully with default params", async () => {
       Coinbase.apiClients.stake!.getStakingContext = mockReturnValue(STAKING_CONTEXT_MODEL);
       const unstakeableBalance = await address.unstakeableBalance(Coinbase.assets.Eth);
@@ -522,7 +680,7 @@ describe("ExternalAddress", () => {
     });
   });
 
-  describe(".claimableBalance", () => {
+  describe("#claimableBalance", () => {
     it("should return the claimable balance successfully with default params", async () => {
       Coinbase.apiClients.stake!.getStakingContext = mockReturnValue(STAKING_CONTEXT_MODEL);
       const claimableBalance = await address.claimableBalance(Coinbase.assets.Eth);
@@ -552,6 +710,25 @@ describe("ExternalAddress", () => {
         options: {
           mode: StakeOptionsMode.DEFAULT,
         },
+      });
+    });
+  });
+
+  describe("#broadcastExternalTransaction", () => {
+    it("should successfully broadcast an external transaction", async () => {
+      Coinbase.apiClients.externalAddress!.broadcastExternalTransaction = mockReturnValue({
+        transaction_hash: "transactionHash",
+        transaction_link: "transactionLink",
+      });
+      const response = await address.broadcastExternalTransaction("signedPayload");
+      expect(response).toEqual({
+        transactionHash: "transactionHash",
+        transactionLink: "transactionLink",
+      });
+      expect(
+        Coinbase.apiClients.externalAddress!.broadcastExternalTransaction,
+      ).toHaveBeenCalledWith(address.getNetworkId(), address.getId(), {
+        signed_payload: "signedPayload",
       });
     });
   });
